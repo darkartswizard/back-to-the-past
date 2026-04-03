@@ -78,17 +78,98 @@ function patchPageAndLocators(page) {
       });
     };
     
+    /**
+     * Find spinner elements on the page and inside iframes
+     */
+    const findSpinners = async () => {
+      // Find spinners in main page
+      const mainSpinners = await page.locator('[class*="spinner"], [class*="loading"], [class*="loader"], [role="progressbar"], .fa-spinner, .fa-spin').all();
+      
+      // Find spinners inside contentWindow iframe
+      const allSpinners = [...mainSpinners];
+      try {
+        const iframe = page.locator('iframe[name="contentWindow"]');
+        const frame = await iframe.contentFrame();
+        if (frame) {
+          const frameSpinners = await frame.locator('.spinner, [class*="spinner"], [class*="loading"], [class*="loader"], [role="progressbar"]').all();
+          allSpinners.push(...frameSpinners);
+        }
+      } catch (error) {
+        // Iframe not available or no frame content
+      }
+      
+      return allSpinners;
+    };
+
+    /**
+     * Flash an element once (toggle outline)
+     */
+    const flashElement = async (/** @type {any} */ locator, /** @type {boolean} */ isRed) => {
+      try {
+        await locator.evaluate((/** @type {HTMLElement} */ el, /** @type {boolean} */ red) => {
+          el.style.outline = red ? '3px solid red' : '3px solid yellow';
+          el.style.outlineOffset = '2px';
+        }, isRed);
+      } catch (error) {
+        // Spinner disappeared during flash
+        console.log(`[dynamicWait] 🎯 Spinner disappeared`);
+      }
+    };
+
     // Small initial wait
     await page.waitForTimeout(minWait);
     
     let previousCount = await countVisibleElements();
     let stableCount = 0;
+    let cycleCount = 0;
     
     // Poll for element count stability
     while (Date.now() - startTime < maxWait) {
-      await page.waitForTimeout(pollInterval);
-      
       try {
+        // Check for spinners immediately (before waiting)
+        try {
+          const spinners = await findSpinners();
+          if (spinners.length > 0) {
+            // Flash with alternating colors each cycle
+            const isRed = cycleCount % 2 === 0;
+            spinners.forEach((/** @type {any} */ spinner) => flashElement(spinner, isRed).catch(() => {}));
+          }
+        } catch (error) {
+          // Ignore spinner detection errors
+        }
+        
+        // Check for "Later" button immediately
+        try {
+          // Check main page and iframe
+          const laterButtons = [];
+          const mainLater = await page.getByRole('button', { name: /later/i }).all();
+          laterButtons.push(...mainLater);
+          
+          try {
+            const iframe = page.locator('iframe[name="contentWindow"]');
+            const frame = await iframe.contentFrame();
+            if (frame) {
+              const frameLater = await frame.getByRole('button', { name: /later/i }).all();
+              laterButtons.push(...frameLater);
+            }
+          } catch (error) {
+            // Iframe not available
+          }
+          
+          if (laterButtons.length > 0) {
+            console.log(`[dynamicWait] 🔘 Found ${laterButtons.length} "Later" button(s) - clicking...`);
+            // Click the first "Later" button found
+            try {
+              await laterButtons[0].click();
+              console.log(`[dynamicWait] ✓ Clicked "Later" button`);
+            } catch (error) {
+              console.log(`[dynamicWait] ⚠ Failed to click "Later" button - may have disappeared`);
+            }
+          }
+        } catch (error) {
+          // Ignore later button detection errors
+        }
+        
         const currentCount = await countVisibleElements();
         
         if (JSON.stringify(currentCount) === JSON.stringify(previousCount)) {
@@ -112,6 +193,9 @@ function patchPageAndLocators(page) {
       } catch (error) {
         stableCount = 0;
       }
+      
+      cycleCount++;
+      await page.waitForTimeout(pollInterval);
     }
     
     const actualTime = Date.now() - startTime;
