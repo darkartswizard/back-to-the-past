@@ -1,16 +1,14 @@
-const { test } = require('./fixtures');
-const { expect } = require('@playwright/test');
+const { test, expect } = require('@playwright/test');
 const BackToThePastPage = require('./back-to-the-past.page');
 const { patchPageAndLocators } = require('./console-logger');
 
-// @ts-ignore - dynamicWait is a custom fixture
-test('Back To The Past', async ({ page, dynamicWait }) => {
+test('Back To The Past', async ({ page }) => {
   test.setTimeout(60000); // 1 minute timeout
   
   // Setup console logger with monkey patching on the page instance
   patchPageAndLocators(page);
   
-  const backToThePastPage = new BackToThePastPage(page, dynamicWait);
+  const backToThePastPage = new BackToThePastPage(page);
 
 // Todo: Test must close random popup by clicking "Later" button
 

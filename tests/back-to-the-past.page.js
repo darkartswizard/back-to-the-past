@@ -1,11 +1,9 @@
 class BackToThePastPage {
   /**
    * @param {any} page
-   * @param {any} dynamicWait - Dynamic wait fixture function
    */
-  constructor(page, dynamicWait) {
+  constructor(page) {
     this.page = page;
-    this.dynamicWait = dynamicWait;
     this.iframe = page.locator('iframe[name="contentWindow"]');
     
     // Buttons
@@ -27,7 +25,7 @@ class BackToThePastPage {
     await this.page.waitForLoadState('domcontentloaded');
     
     // Additional wait for dynamic content - using dynamicWait
-    await this.dynamicWait(1500);
+    await this.page.dynamicWait(1500);
     
     // Wait for iframe to be available
     await this.iframe.waitFor({ state: 'visible', timeout: 5000 });
@@ -38,14 +36,15 @@ class BackToThePastPage {
     await this.toggleSidebarButton.click();
     
     // Wait for animation to complete - using dynamicWait
-    await this.dynamicWait(800);
+    await this.page.dynamicWait(800);
   }
 
   async clickWaitWithPopupButton() {
     const frame = await this.getContentFrame();
     
-    // Wait for frame to be fully loaded
-    await this.page.waitForTimeout(5000);
+    // Wait for frame to be fully loaded - using dynamicWait
+    //await this.page.waitForTimeout(5000); //Drop in replacement
+    await this.page.dynamicWait(5000);
     
     const button = frame.getByRole('button', { name: 'WAIT WITH POPUP AND TOAST' });
 
@@ -53,7 +52,7 @@ class BackToThePastPage {
     await button.click();
     
     // Wait for popup/toast processing - using dynamicWait
-    await this.dynamicWait(2000);
+    await this.page.dynamicWait(2000);
   }
 
   async verifySyncingMessageVisible() {
@@ -63,7 +62,7 @@ class BackToThePastPage {
     const message = frame.getByText(this.syncingMessage);
     
     // Additional stability wait - using dynamicWait
-    await this.dynamicWait(500);
+    await this.page.dynamicWait(500);
     
     return message;
   }
