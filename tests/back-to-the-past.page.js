@@ -47,10 +47,9 @@ class BackToThePastPage {
     await this.page.dynamicWait(5000);
     
     const button = frame.getByRole('button', { name: 'WAIT WITH POPUP AND TOAST' });
-    await button.click();
     
-    // Wait for popup/toast processing - using dynamicWait
-    await this.page.dynamicWait(2000);
+    // Use clickAdv for automatic before/after waiting
+    await button.clickAdv();
   }
 
   async verifySyncingMessageVisible() {

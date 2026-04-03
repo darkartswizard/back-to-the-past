@@ -1,4 +1,5 @@
 const path = require('path');
+const { expect } = require('@playwright/test');
 
 function getCallerInfo() {
   const stack = new Error().stack;
@@ -31,9 +32,14 @@ function patchPageAndLocators(page) {
   const originalWaitForLoadState = page.waitForLoadState;
   
   // Add dynamicWait method to page
-  page.dynamicWait = async function(/** @type {number} */ ms) {
+  /**
+   * @param {number} ms - Time to wait in milliseconds
+   * @param {boolean} [noEarlyExit=false] - If true, wait full duration even if stable (for popup detection)
+   */
+  page.dynamicWait = async function(ms, noEarlyExit = false) {
     const { fileName, lineNumber } = getCallerInfo();
-    console.log(`[${fileName}:${lineNumber}] dynamicWait(${ms || 1000}ms) - polling for element stability`);
+    const waitMode = noEarlyExit ? ' (full duration mode)' : '';
+    console.log(`[${fileName}:${lineNumber}] dynamicWait(${ms || 1000}ms${waitMode}) - polling for element stability`);
     
     const startTime = Date.now();
     const originalWaitTime = ms || 1000;
@@ -109,15 +115,15 @@ function patchPageAndLocators(page) {
     /**
      * Flash an element once (toggle outline)
      */
-    const flashElement = async (/** @type {any} */ locator, /** @type {boolean} */ isRed) => {
+    const flashElement = async (/** @type {any} */ locator, /** @type {string} */ color = 'yellow') => {
       try {
-        await locator.evaluate((/** @type {HTMLElement} */ el, /** @type {boolean} */ red) => {
-          el.style.outline = red ? '3px solid red' : '3px solid yellow';
+        await locator.evaluate((/** @type {HTMLElement} */ el, /** @type {string} */ outlineColor) => {
+          el.style.outline = `3px solid ${outlineColor}`;
           el.style.outlineOffset = '2px';
-        }, isRed);
+        }, color);
       } catch (error) {
-        // Spinner disappeared during flash
-        console.log(`[dynamicWait] 🎯 Spinner disappeared`);
+        // Element disappeared during flash
+        console.log(`[dynamicWait] 🎯 Element disappeared during flash`);
       }
     };
 
@@ -183,9 +189,9 @@ function patchPageAndLocators(page) {
             
             console.log(`[dynamicWait] 🎉 Toast detected with text: "${validToasts[0].text}"`);
             
-            // Flash the first toast
+            // Flash the first toast in green
             try {
-              await flashElement(validToasts[0].locator, true);
+              await flashElement(validToasts[0].locator, 'green');
             } catch (error) {
               // Toast may have disappeared
             }
@@ -220,7 +226,7 @@ function patchPageAndLocators(page) {
             // Log which spinner element is being detected (only once every few cycles to avoid spam)
             if (cycleCount % 5 === 0) {
               try {
-                const spinnerInfo = await spinners[0].evaluate((el) => {
+                const spinnerInfo = await spinners[0].evaluate((/** @type {HTMLElement} */ el) => {
                   return {
                     tagName: el.tagName,
                     className: el.className,
@@ -235,9 +241,9 @@ function patchPageAndLocators(page) {
               }
             }
             
-            // Flash with alternating colors each cycle
-            const isRed = cycleCount % 2 === 0;
-            spinners.forEach((/** @type {any} */ spinner) => flashElement(spinner, isRed).catch(() => {}));
+            // Flash with alternating colors each cycle (red/yellow)
+            const color = cycleCount % 2 === 0 ? 'red' : 'yellow';
+            spinners.forEach((/** @type {any} */ spinner) => flashElement(spinner, color).catch(() => {}));
             // Reset stability count because page is still loading
             stableCount = 0;
           }
@@ -250,12 +256,27 @@ function patchPageAndLocators(page) {
           // Check main page and iframe for Later button (by role and by id)
           const laterButtons = [];
           
+          console.log(`[dynamicWait] 🔍 Checking for Later button... (cycle ${cycleCount})`);
+          
           // Check by role (text "LATER")
           const mainLater = await page.getByRole('button', { name: /later/i }).all();
+          if (mainLater.length > 0) {
+            console.log(`[dynamicWait] 🔍 Found ${mainLater.length} Later button(s) on main page by role`);
+          }
           laterButtons.push(...mainLater);
+          
+          // Check by text (more aggressive)
+          const mainLaterText = await page.getByText(/^LATER$/i).all();
+          if (mainLaterText.length > 0) {
+            console.log(`[dynamicWait] 🔍 Found ${mainLaterText.length} Later element(s) on main page by text`);
+          }
+          laterButtons.push(...mainLaterText);
           
           // Check by id
           const mainLaterId = await page.locator('#popup-later').all();
+          if (mainLaterId.length > 0) {
+            console.log(`[dynamicWait] 🔍 Found ${mainLaterId.length} Later button(s) on main page by id`);
+          }
           laterButtons.push(...mainLaterId);
           
           try {
@@ -263,27 +284,43 @@ function patchPageAndLocators(page) {
             const frame = await iframe.contentFrame();
             if (frame) {
               const frameLater = await frame.getByRole('button', { name: /later/i }).all();
+              if (frameLater.length > 0) {
+                console.log(`[dynamicWait] 🔍 Found ${frameLater.length} Later button(s) in iframe by role`);
+              }
               laterButtons.push(...frameLater);
               
+              const frameLaterText = await frame.getByText(/^LATER$/i).all();
+              if (frameLaterText.length > 0) {
+                console.log(`[dynamicWait] 🔍 Found ${frameLaterText.length} Later element(s) in iframe by text`);
+              }
+              laterButtons.push(...frameLaterText);
+              
               const frameLaterId = await frame.locator('#popup-later').all();
+              if (frameLaterId.length > 0) {
+                console.log(`[dynamicWait] 🔍 Found ${frameLaterId.length} Later button(s) in iframe by id`);
+              }
               laterButtons.push(...frameLaterId);
             }
-          } catch (error) {
-            // Iframe not available
+          } catch (iframeError) {
+            console.log(`[dynamicWait] ⚠ Iframe access error: ${iframeError.message}`);
           }
           
+          console.log(`[dynamicWait] 🔍 Total Later buttons/elements found: ${laterButtons.length}`);
+          
           if (laterButtons.length > 0) {
-            console.log(`[dynamicWait] 🔘 Found ${laterButtons.length} "Later" button(s) - clicking...`);
+            console.log(`[dynamicWait] 🔘 Found total ${laterButtons.length} "Later" button(s) - clicking first one...`);
             // Click the first "Later" button found
             try {
               await laterButtons[0].click();
               console.log(`[dynamicWait] ✓ Clicked "Later" button`);
-            } catch (error) {
-              console.log(`[dynamicWait] ⚠ Failed to click "Later" button - may have disappeared`);
+              // Reset stability after clicking popup button
+              stableCount = 0;
+            } catch (clickError) {
+              console.log(`[dynamicWait] ⚠ Failed to click "Later" button: ${clickError.message}`);
             }
           }
         } catch (error) {
-          // Ignore later button detection errors
+          console.log(`[dynamicWait] ⚠ Later button detection error: ${error.message}`);
         }
         
         const currentCount = await countVisibleElements();
@@ -298,7 +335,7 @@ function patchPageAndLocators(page) {
           if (JSON.stringify(currentCount) === JSON.stringify(previousCount)) {
             stableCount++;
             
-            if (stableCount >= stabilityChecks) {
+            if (stableCount >= stabilityChecks && !noEarlyExit) {
               const actualTime = Date.now() - startTime;
               const difference = originalWaitTime - actualTime;
               
@@ -433,6 +470,40 @@ function patchLocator(locator) {
       console.log(`[${fileName}:${lineNumber}] click ${locatorDesc}`);
       return await originalClick.call(this, options);
     };
+    
+    // Add clickAdv - advanced click with dynamicWait before and after
+    locator.clickAdv = async function(/** @type {any} */ options) {
+      const { fileName, lineNumber } = getCallerInfo();
+      let locatorDesc = 'locator';
+      try {
+        locatorDesc = this.toString();
+      } catch (e) {
+        // Ignore
+      }
+      
+      console.log(`[${fileName}:${lineNumber}] clickAdv ${locatorDesc} - waiting before click...`);
+      
+      // Get page from locator
+      const page = this.page();
+      
+      // Wait for stability before click
+      await page.dynamicWait(1000);
+      
+      // Try to click with error handling
+      try {
+        console.log(`[${fileName}:${lineNumber}] clickAdv ${locatorDesc} - clicking...`);
+        await originalClick.call(this, options);
+        console.log(`[${fileName}:${lineNumber}] clickAdv ${locatorDesc} - click successful`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.log(`[${fileName}:${lineNumber}] clickAdv ${locatorDesc} - ❌ Click failed: ${errorMsg}`);
+        throw error;
+      }
+      
+      // Wait for stability after click (longer to catch delayed popups, no early exit)
+      console.log(`[${fileName}:${lineNumber}] clickAdv ${locatorDesc} - waiting after click...`);
+      await page.dynamicWait(8000, true); // true = no early exit, wait full duration for popups
+    };
   }
 
   // Monkey patch Locator.waitFor
@@ -494,4 +565,31 @@ function patchFrame(frame) {
   });
 }
 
-module.exports = { patchPageAndLocators };
+/**
+ * Advanced expect wrapper that runs dynamicWait before assertion
+ * This helps catch and clear popups/toasts before performing assertions
+ * @param {any} locator - Playwright locator to assert on
+ * @returns {Promise<any>} - Promise that resolves to the locator (use with expect)
+ */
+async function expectAdv(locator) {
+  const { fileName, lineNumber } = getCallerInfo();
+  
+  try {
+    // Get page from locator
+    const page = locator.page();
+    
+    console.log(`[${fileName}:${lineNumber}] expectAdv - running dynamicWait to handle popups/toasts...`);
+    
+    // Run dynamicWait to allow popups/toasts to appear and be handled
+    await page.dynamicWait(5000);
+    
+    console.log(`[${fileName}:${lineNumber}] expectAdv - returning locator for assertion...`);
+  } catch (error) {
+    console.log(`[${fileName}:${lineNumber}] expectAdv - warning: could not run dynamicWait`);
+  }
+  
+  // Return the locator so it can be used with expect()
+  return locator;
+}
+
+module.exports = { patchPageAndLocators, expectAdv };

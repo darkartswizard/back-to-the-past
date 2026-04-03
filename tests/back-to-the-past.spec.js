@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const BackToThePastPage = require('./back-to-the-past.page');
-const { patchPageAndLocators } = require('./console-logger');
+const { patchPageAndLocators, expectAdv } = require('./console-logger');
 
 test('Back To The Past', async ({ page }) => {
   test.setTimeout(60000); // 1 minute timeout
@@ -14,8 +14,8 @@ test('Back To The Past', async ({ page }) => {
 
   // Step 1: Navigate to the website
   await backToThePastPage.goto();
-    await page.dynamicWait(1000);
-
+  // @ts-ignore - dynamicWait is added via monkey patching
+  await page.dynamicWait(1000);
 
   // Step 2: Show full screen
   await backToThePastPage.toggleSidebar();
@@ -25,13 +25,13 @@ test('Back To The Past', async ({ page }) => {
 
   // Validate the Syncing With Hill Valley Toast message - Wait up to 30 seconds
   const syncingMessage = await backToThePastPage.verifySyncingMessageVisible();
-  await expect(syncingMessage).toBeVisible({ timeout: 30000 });
+  await expect(await expectAdv(syncingMessage)).toBeVisible({ timeout: 30000 });
 
   // Step 4: Click 'Back to the Past' button
   await backToThePastPage.clickBackToThePastButton();
 
   // Verify the final message is visible
-  await expect(await backToThePastPage.verifyConstructionMessageVisible()).toBeVisible();
+  await expect(await expectAdv(await backToThePastPage.verifyConstructionMessageVisible())).toBeVisible();
 });
 
 
