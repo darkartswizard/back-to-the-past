@@ -35,8 +35,9 @@ function patchPageAndLocators(page) {
   /**
    * @param {number} ms - Time to wait in milliseconds
    * @param {boolean} [noEarlyExit=false] - If true, wait full duration even if stable (for popup detection)
+   * @param {string} [reason=''] - Reason for hard-coded wait (required if ms ends with 1)
    */
-  page.dynamicWait = async function(ms, noEarlyExit = false) {
+  page.dynamicWait = async function(ms, noEarlyExit = false, reason = '') {
     const { fileName, lineNumber } = getCallerInfo();
     const waitMode = noEarlyExit ? ' (full duration mode)' : '';
     console.log(`[${fileName}:${lineNumber}] dynamicWait(${ms || 1000}ms${waitMode}) - polling for element stability`);
@@ -47,6 +48,22 @@ function patchPageAndLocators(page) {
     const maxWait = Math.max(originalWaitTime * 2, 5000); // Max 2x original or 5 seconds
     const minWait = 100; // Minimum wait before checking
     const stabilityChecks = 3; // Number of consecutive stable checks required
+    
+    // Helper function to log hard-coded wait notification if ms ends with 1
+    const logHardCodedWaitIfNeeded = () => {
+      if (originalWaitTime % 10 === 1) {
+        if (!reason || reason.trim() === '') {
+          console.log(`\n${'='.repeat(80)}`);
+          console.log(`⚠️  HARD-CODED WAIT DETECTED - REASON REQUIRED ⚠️`);
+          console.log(`File: ${fileName}:${lineNumber}`);
+          console.log(`Wait time ends with 1: ${originalWaitTime}ms`);
+          console.log(`Please add a reason: await page.dynamicWait(${originalWaitTime}, ${noEarlyExit}, 'reason here')`);
+          console.log(`${'='.repeat(80)}\n`);
+        } else {
+          console.log(`[${fileName}:${lineNumber}] ⚠️ HARD-CODED WAIT (${originalWaitTime}ms) - Reason: ${reason}`);
+        }
+      }
+    };
     
     /**
      * Count visible elements on the page
@@ -91,25 +108,52 @@ function patchPageAndLocators(page) {
      * Find spinner elements on the page and inside iframes
      */
     const findSpinners = async () => {
-      // Only look for actively spinning/loading elements, not static elements with "spinner" in class
-      // Use more specific selectors: fa-spin (FontAwesome), role="progressbar", or elements with "loading" class
-      const mainSpinners = await page.locator('.fa-spin, [role="progressbar"], [class*="loading"]:not(#global-spinner), [class*="loader"]:not(#global-spinner)').all();
+      // Comprehensive spinner detection - look for various patterns
+      const spinnerSelectors = [
+        '.fa-spin',                           // FontAwesome spinning
+        '[role="progressbar"]',               // Accessibility role
+        '[class*="loading"]:not(#global-spinner)', // Loading classes
+        '[class*="loader"]:not(#global-spinner)',  // Loader classes
+        '[class*="spinner"]',                 // Generic spinner classes
+        'svg[class*="spin"]',                 // SVG spinners
+        'svg[class*="loading"]',              // SVG loading indicators
+        'svg circle[class*="progress"]',      // SVG progress circles
+        '[class*="progress-circle"]',         // Progress circles
+        '.MuiCircularProgress-root',          // Material UI
+        '[data-loading="true"]',              // Data attribute indicators
+        '[aria-busy="true"]'                  // ARIA busy state
+      ].join(', ');
       
-      // Find spinners inside contentWindow iframe - but exclude static elements
+      const mainSpinners = await page.locator(spinnerSelectors).all();
+      
+      // Find spinners inside contentWindow iframe
       const allSpinners = [...mainSpinners];
       try {
         const iframe = page.locator('iframe[name="contentWindow"]');
         const frame = await iframe.contentFrame();
         if (frame) {
-          // Only look for specific loading indicators in iframe, exclude generic .spinner class
-          const frameSpinners = await frame.locator('.fa-spin, [role="progressbar"], [class*="loading"], [class*="loader"]').all();
+          const frameSpinners = await frame.locator(spinnerSelectors).all();
           allSpinners.push(...frameSpinners);
         }
       } catch (error) {
         // Iframe not available or no frame content
       }
       
-      return allSpinners;
+      // Filter out spinners that are not visible or #global-spinner
+      const visibleSpinners = [];
+      for (const spinner of allSpinners) {
+        try {
+          const isVisible = await spinner.isVisible();
+          const id = await spinner.getAttribute('id');
+          if (isVisible && id !== 'global-spinner') {
+            visibleSpinners.push(spinner);
+          }
+        } catch (e) {
+          // Spinner disappeared or can't check visibility
+        }
+      }
+      
+      return visibleSpinners;
     };
 
     /**
@@ -123,7 +167,7 @@ function patchPageAndLocators(page) {
         }, color);
       } catch (error) {
         // Element disappeared during flash
-        console.log(`[dynamicWait] 🎯 Element disappeared during flash`);
+        console.log(`[dynamicWait] 🎯 Element flash failed - may have disappeared`);
       }
     };
 
@@ -205,6 +249,7 @@ function patchPageAndLocators(page) {
             } else {
               console.log(`[dynamicWait] 🎉 Toast detected after ${actualTime}ms (${Math.abs(difference)}ms slower than waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
             }
+            logHardCodedWaitIfNeeded();
             return;
           } else if (!hasToast && toastFound) {
             // Toast disappeared - clear the flag
@@ -220,6 +265,12 @@ function patchPageAndLocators(page) {
         let hasSpinner = false;
         try {
           const spinners = await findSpinners();
+          
+          // Debug: Log spinner detection every cycle
+          if (cycleCount % 3 === 0 && spinners.length > 0) {
+            console.log(`[dynamicWait] 🔄 Found ${spinners.length} spinner(s) in cycle ${cycleCount}`);
+          }
+          
           if (spinners.length > 0) {
             hasSpinner = true;
             
@@ -253,10 +304,10 @@ function patchPageAndLocators(page) {
         
         // Check for "Later" button immediately
         try {
-          // Check main page and iframe for Later button (by role and by id)
+          // Check main page and iframe for popups button (by role and by id)
           const laterButtons = [];
           
-          console.log(`[dynamicWait] 🔍 Checking for Later button... (cycle ${cycleCount})`);
+          console.log(`[dynamicWait] 🔍 Checking for popups... (cycle ${cycleCount})`);
           
           // Check by role (text "LATER")
           const mainLater = await page.getByRole('button', { name: /later/i }).all();
@@ -344,6 +395,7 @@ function patchPageAndLocators(page) {
               } else {
                 console.log(`[dynamicWait] ✓ Stable after ${actualTime}ms (${Math.abs(difference)}ms slower than waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
               }
+              logHardCodedWaitIfNeeded();
               return;
             }
           } else {
@@ -394,6 +446,7 @@ function patchPageAndLocators(page) {
     const difference = originalWaitTime - actualTime;
     const currentCount = await countVisibleElements();
     console.log(`[dynamicWait] ⚠ Max wait ${actualTime}ms reached without stability (${Math.abs(difference)}ms vs waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
+    logHardCodedWaitIfNeeded();
   };
 
   // Monkey patch Page.waitForTimeout

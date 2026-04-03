@@ -15,7 +15,9 @@ test('Back To The Past', async ({ page }) => {
   // Step 1: Navigate to the website
   await backToThePastPage.goto();
   // @ts-ignore - dynamicWait is added via monkey patching
-  await page.dynamicWait(1000);
+    await page.dynamicWait(1501, false); // Example without reason
+  // @ts-ignore - dynamicWait is added via monkey patching
+  await page.dynamicWait(1001, false, 'Extra buffer after page load'); // Example with reason
 
   // Step 2: Show full screen
   await backToThePastPage.toggleSidebar();
