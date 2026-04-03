@@ -122,17 +122,100 @@ function patchPageAndLocators(page) {
     let previousCount = await countVisibleElements();
     let stableCount = 0;
     let cycleCount = 0;
+    let toastFound = false; // Track if toast was already found
     
     // Poll for element count stability
     while (Date.now() - startTime < maxWait) {
       try {
+        // Check for toast messages FIRST - exit immediately if found for the first time
+        try {
+          const toastSelectors = [
+            '[role="alert"]',
+            '[role="status"]',
+            '[aria-live]',
+            '[class*="toast"]',
+            '[class*="Toast"]',
+            '[class*="notification"]',
+            '[class*="alert"]',
+            '[class*="message"]'
+          ].join(', ');
+          
+          const mainToasts = await page.locator(toastSelectors).all();
+          const frameToasts = [];
+          
+          // Also check iframe
+          try {
+            const iframe = page.locator('iframe[name="contentWindow"]');
+            const frame = await iframe.contentFrame();
+            if (frame) {
+              const iframeToasts = await frame.locator(toastSelectors).all();
+              frameToasts.push(...iframeToasts);
+            }
+          } catch (error) {
+            // Iframe not available
+          }
+          
+          const allToasts = [...mainToasts, ...frameToasts];
+          
+          // Filter out empty toasts - get text from visible toasts only
+          let validToasts = [];
+          for (const toast of allToasts) {
+            try {
+              const text = await toast.textContent();
+              if (text && text.trim().length > 0) {
+                validToasts.push({ locator: toast, text: text.trim() });
+              }
+            } catch (error) {
+              // Ignore if can't get text
+            }
+          }
+          
+          const hasToast = validToasts.length > 0;
+          
+          if (hasToast && !toastFound) {
+            // First time seeing toast - flash it and exit
+            toastFound = true;
+            
+            console.log(`[dynamicWait] 🎉 Toast detected with text: "${validToasts[0].text}"`);
+            
+            // Flash the first toast
+            try {
+              await flashElement(validToasts[0].locator, true);
+            } catch (error) {
+              // Toast may have disappeared
+            }
+            
+            const actualTime = Date.now() - startTime;
+            const difference = originalWaitTime - actualTime;
+            const currentCount = await countVisibleElements();
+            
+            if (difference > 0) {
+              console.log(`[dynamicWait] 🎉 Toast detected after ${actualTime}ms (saved ${difference}ms vs waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
+            } else {
+              console.log(`[dynamicWait] 🎉 Toast detected after ${actualTime}ms (${Math.abs(difference)}ms slower than waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
+            }
+            return;
+          } else if (!hasToast && toastFound) {
+            // Toast disappeared - clear the flag
+            toastFound = false;
+            console.log(`[dynamicWait] 👋 Toast disappeared - continuing to wait for stability`);
+          }
+          // If hasToast && toastFound, ignore (toast still present but already handled)
+        } catch (error) {
+          // Ignore toast detection errors
+        }
+        
         // Check for spinners immediately (before waiting)
+        let hasSpinner = false;
         try {
           const spinners = await findSpinners();
           if (spinners.length > 0) {
+            hasSpinner = true;
             // Flash with alternating colors each cycle
             const isRed = cycleCount % 2 === 0;
             spinners.forEach((/** @type {any} */ spinner) => flashElement(spinner, isRed).catch(() => {}));
+            // Reset stability count because page is still loading
+            stableCount = 0;
           }
         } catch (error) {
           // Ignore spinner detection errors
@@ -140,10 +223,16 @@ function patchPageAndLocators(page) {
         
         // Check for "Later" button immediately
         try {
-          // Check main page and iframe
+          // Check main page and iframe for Later button (by role and by id)
           const laterButtons = [];
+          
+          // Check by role (text "LATER")
           const mainLater = await page.getByRole('button', { name: /later/i }).all();
           laterButtons.push(...mainLater);
+          
+          // Check by id
+          const mainLaterId = await page.locator('#popup-later').all();
+          laterButtons.push(...mainLaterId);
           
           try {
             const iframe = page.locator('iframe[name="contentWindow"]');
@@ -151,6 +240,9 @@ function patchPageAndLocators(page) {
             if (frame) {
               const frameLater = await frame.getByRole('button', { name: /later/i }).all();
               laterButtons.push(...frameLater);
+              
+              const frameLaterId = await frame.locator('#popup-later').all();
+              laterButtons.push(...frameLaterId);
             }
           } catch (error) {
             // Iframe not available
@@ -172,22 +264,28 @@ function patchPageAndLocators(page) {
         
         const currentCount = await countVisibleElements();
         
-        if (JSON.stringify(currentCount) === JSON.stringify(previousCount)) {
-          stableCount++;
-          
-          if (stableCount >= stabilityChecks) {
-            const actualTime = Date.now() - startTime;
-            const difference = originalWaitTime - actualTime;
+        // Only check stability if no spinner is present
+        if (!hasSpinner) {
+          if (JSON.stringify(currentCount) === JSON.stringify(previousCount)) {
+            stableCount++;
             
-            if (difference > 0) {
-              console.log(`[dynamicWait] ✓ Stable after ${actualTime}ms (saved ${difference}ms vs waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
-            } else {
-              console.log(`[dynamicWait] ✓ Stable after ${actualTime}ms (${Math.abs(difference)}ms slower than waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
+            if (stableCount >= stabilityChecks) {
+              const actualTime = Date.now() - startTime;
+              const difference = originalWaitTime - actualTime;
+              
+              if (difference > 0) {
+                console.log(`[dynamicWait] ✓ Stable after ${actualTime}ms (saved ${difference}ms vs waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
+              } else {
+                console.log(`[dynamicWait] ✓ Stable after ${actualTime}ms (${Math.abs(difference)}ms slower than waitForTimeout(${originalWaitTime}ms)) - ${currentCount.total} visible elements`);
+              }
+              return;
             }
-            return;
+          } else {
+            stableCount = 0;
+            previousCount = currentCount;
           }
         } else {
-          stableCount = 0;
+          // Spinner present - update previous count but don't check stability
           previousCount = currentCount;
         }
       } catch (error) {
@@ -208,8 +306,12 @@ function patchPageAndLocators(page) {
   const originalWaitForTimeout = page.waitForTimeout;
   page.waitForTimeout = async function(/** @type {any} */ timeout) {
     const { fileName, lineNumber } = getCallerInfo();
-    // Skip logging for internal fixture calls
-    if (fileName !== 'fixtures.js' && fileName !== 'console-logger.js') {
+    // Skip logging for internal fixture calls and internal polling (333ms from dynamicWait)
+    if (fileName !== 'fixtures.js' && 
+        fileName !== 'console-logger.js' && 
+        fileName !== 'task_queues' &&
+        timeout !== 333 && 
+        timeout !== 100) {
       console.log(`[${fileName}:${lineNumber}] waitForTimeout(${timeout}ms)`);
     }
     return await originalWaitForTimeout.call(this, timeout);

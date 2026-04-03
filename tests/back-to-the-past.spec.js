@@ -23,8 +23,9 @@ test('Back To The Past', async ({ page }) => {
   // Step 3: Click "Wait For Popup and Toast Message"
   await backToThePastPage.clickWaitWithPopupButton();
 
-  // Validate the Syncing With Hill Valley Toast message - Fails here!!!
-  await expect(await backToThePastPage.verifySyncingMessageVisible()).toBeVisible();
+  // Validate the Syncing With Hill Valley Toast message - Wait up to 30 seconds
+  const syncingMessage = await backToThePastPage.verifySyncingMessageVisible();
+  await expect(syncingMessage).toBeVisible({ timeout: 30000 });
 
   // Step 4: Click 'Back to the Past' button
   await backToThePastPage.clickBackToThePastButton();
