@@ -60,7 +60,7 @@ class BackToThePastPage {
     const message = frame.getByText(this.syncingMessage);
     
     // Additional stability wait - using dynamicWait
-    await this.page.dynamicWait(500);
+    //await this.page.dynamicWait(500);
     
     return message;
   }
@@ -69,7 +69,7 @@ class BackToThePastPage {
     const frame = await this.getContentFrame();
     
     // Wait for any animations to settle
-    await this.page.waitForTimeout(1000);
+    await this.page.dynamicWait(1000);
     
     const button = frame.getByRole('button', { name: 'BACK TO THE PAST' });
     
@@ -77,19 +77,19 @@ class BackToThePastPage {
     await button.waitFor({ state: 'visible', timeout: 5000 });
     
     // Wait for button to be enabled
-    await this.page.waitForTimeout(300);
+    await this.page.dynamicWait(300);
     
     await button.click();
     
     // Wait for navigation/transition
-    await this.page.waitForTimeout(1500);
+    await this.page.dynamicWait(1500);
   }
 
   async verifyConstructionMessageVisible() {
     const frame = await this.getContentFrame();
     
     // Wait for page transition to complete
-    await this.page.waitForTimeout(800);
+    await this.page.dynamicWait(800);
     
     const message = frame.getByText(this.constructionMessage);
     
@@ -104,12 +104,12 @@ class BackToThePastPage {
       } catch (error) {
         retries++;
         if (retries === maxRetries) throw error;
-        await this.page.waitForTimeout(1000);
+        await this.page.dynamicWait(1000);
       }
     }
     
     // Final stability check
-    await this.page.waitForTimeout(500);
+    await this.page.dynamicWait(500);
     
     return message;
   }

@@ -14,7 +14,7 @@ test('Back To The Past', async ({ page }) => {
 
   // Step 1: Navigate to the website
   await backToThePastPage.goto();
-    await page.waitForTimeout(1000);
+    await page.dynamicWait(1000);
 
 
   // Step 2: Show full screen

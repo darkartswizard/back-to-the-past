@@ -85,16 +85,18 @@ function patchPageAndLocators(page) {
      * Find spinner elements on the page and inside iframes
      */
     const findSpinners = async () => {
-      // Find spinners in main page
-      const mainSpinners = await page.locator('[class*="spinner"], [class*="loading"], [class*="loader"], [role="progressbar"], .fa-spinner, .fa-spin').all();
+      // Only look for actively spinning/loading elements, not static elements with "spinner" in class
+      // Use more specific selectors: fa-spin (FontAwesome), role="progressbar", or elements with "loading" class
+      const mainSpinners = await page.locator('.fa-spin, [role="progressbar"], [class*="loading"]:not(#global-spinner), [class*="loader"]:not(#global-spinner)').all();
       
-      // Find spinners inside contentWindow iframe
+      // Find spinners inside contentWindow iframe - but exclude static elements
       const allSpinners = [...mainSpinners];
       try {
         const iframe = page.locator('iframe[name="contentWindow"]');
         const frame = await iframe.contentFrame();
         if (frame) {
-          const frameSpinners = await frame.locator('.spinner, [class*="spinner"], [class*="loading"], [class*="loader"], [role="progressbar"]').all();
+          // Only look for specific loading indicators in iframe, exclude generic .spinner class
+          const frameSpinners = await frame.locator('.fa-spin, [role="progressbar"], [class*="loading"], [class*="loader"]').all();
           allSpinners.push(...frameSpinners);
         }
       } catch (error) {
@@ -214,6 +216,25 @@ function patchPageAndLocators(page) {
           const spinners = await findSpinners();
           if (spinners.length > 0) {
             hasSpinner = true;
+            
+            // Log which spinner element is being detected (only once every few cycles to avoid spam)
+            if (cycleCount % 5 === 0) {
+              try {
+                const spinnerInfo = await spinners[0].evaluate((el) => {
+                  return {
+                    tagName: el.tagName,
+                    className: el.className,
+                    id: el.id,
+                    role: el.getAttribute('role'),
+                    text: el.textContent?.substring(0, 30)
+                  };
+                });
+                console.log(`[dynamicWait] 🔍 Spinner detected: <${spinnerInfo.tagName}> class="${spinnerInfo.className}" id="${spinnerInfo.id}" role="${spinnerInfo.role}" text="${spinnerInfo.text}"`);
+              } catch (e) {
+                console.log(`[dynamicWait] 🔍 Spinner detected but couldn't get details`);
+              }
+            }
+            
             // Flash with alternating colors each cycle
             const isRed = cycleCount % 2 === 0;
             spinners.forEach((/** @type {any} */ spinner) => flashElement(spinner, isRed).catch(() => {}));
@@ -267,6 +288,11 @@ function patchPageAndLocators(page) {
         
         const currentCount = await countVisibleElements();
         
+        // Log every cycle for debugging
+        if (cycleCount % 3 === 0) {
+          console.log(`[dynamicWait] Cycle ${cycleCount}: ${currentCount.total} elements, stable: ${stableCount}/${stabilityChecks}, spinner: ${hasSpinner}`);
+        }
+        
         // Only check stability if no spinner is present
         if (!hasSpinner) {
           if (JSON.stringify(currentCount) === JSON.stringify(previousCount)) {
@@ -285,10 +311,26 @@ function patchPageAndLocators(page) {
             }
           } else {
             stableCount = 0;
+            
+            // Log what changed
+            /** @type {string[]} */
+            const changes = [];
+            Object.keys(currentCount.counts).forEach(selector => {
+              const prev = previousCount.counts[selector] || 0;
+              const curr = currentCount.counts[selector];
+              if (prev !== curr) {
+                changes.push(`${selector}: ${prev}→${curr}`);
+              }
+            });
+            
+            console.log(`[dynamicWait] 🔄 Count changed: ${previousCount.total}→${currentCount.total} (${changes.join(', ')})`);
             previousCount = currentCount;
           }
         } else {
           // Spinner present - update previous count but don't check stability
+          if (previousCount.total !== currentCount.total) {
+            console.log(`[dynamicWait] ⏳ Spinner active, count: ${previousCount.total}→${currentCount.total}`);
+          }
           previousCount = currentCount;
         }
       } catch (error) {
