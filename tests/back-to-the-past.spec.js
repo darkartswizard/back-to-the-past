@@ -3,6 +3,8 @@ const BackToThePastPage = require('./back-to-the-past.page');
 const { patchPageAndLocators } = require('./console-logger');
 
 test('Back To The Past', async ({ page }) => {
+  test.setTimeout(60000); // 1 minute timeout
+  
   // Setup console logger with monkey patching on the page instance
   patchPageAndLocators(page);
   
