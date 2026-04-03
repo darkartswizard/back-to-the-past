@@ -27,6 +27,9 @@ function getCallerInfo() {
  * @param {any} page
  */
 function patchPageAndLocators(page) {
+  // Store original methods before patching
+  const originalWaitForLoadState = page.waitForLoadState;
+  
   // Add dynamicWait method to page
   page.dynamicWait = async function(/** @type {number} */ ms) {
     const { fileName, lineNumber } = getCallerInfo();
@@ -296,6 +299,18 @@ function patchPageAndLocators(page) {
       await page.waitForTimeout(pollInterval);
     }
     
+    // After loop ends, ensure page load states are complete
+    try {
+      //console.log(`[dynamicWait] ⏳ Waiting for load state 'load'...`);
+      await originalWaitForLoadState.call(page, 'load');
+      await originalWaitForLoadState.call(page, 'domcontentloaded');
+      await originalWaitForLoadState.call(page, 'networkidle', { timeout: 5000 });
+      //console.log(`[dynamicWait] ✓ Load state 'load' complete`);
+    } catch (error) {
+      //Eat the error
+    }
+    
+
     const actualTime = Date.now() - startTime;
     const difference = originalWaitTime - actualTime;
     const currentCount = await countVisibleElements();
@@ -318,7 +333,6 @@ function patchPageAndLocators(page) {
   };
 
   // Monkey patch Page.waitForLoadState
-  const originalWaitForLoadState = page.waitForLoadState;
   page.waitForLoadState = async function(/** @type {any} */ state, /** @type {any} */ options) {
     const { fileName, lineNumber } = getCallerInfo();
     // Skip logging for internal fixture calls
