@@ -67,6 +67,7 @@ const test = base.extend({
             'label'     // Label
           ];
           
+          /** @type {{ [key: string]: number }} */
           const counts = {};
           let total = 0;
           
