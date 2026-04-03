@@ -45,7 +45,7 @@ class BackToThePastPage {
     const frame = await this.getContentFrame();
     
     // Wait for frame to be fully loaded
-    await this.page.waitForTimeout(500);
+    await this.page.waitForTimeout(5000);
     
     const button = frame.getByRole('button', { name: 'WAIT WITH POPUP AND TOAST' });
 

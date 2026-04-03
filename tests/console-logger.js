@@ -31,7 +31,10 @@ function patchPageAndLocators(page) {
   const originalWaitForTimeout = page.waitForTimeout;
   page.waitForTimeout = async function(/** @type {any} */ timeout) {
     const { fileName, lineNumber } = getCallerInfo();
-    console.log(`[${fileName}:${lineNumber}] waitForTimeout(${timeout}ms)`);
+    // Skip logging for internal fixture calls
+    if (fileName !== 'fixtures.js') {
+      console.log(`[${fileName}:${lineNumber}] waitForTimeout(${timeout}ms)`);
+    }
     return await originalWaitForTimeout.call(this, timeout);
   };
 
@@ -39,7 +42,10 @@ function patchPageAndLocators(page) {
   const originalWaitForLoadState = page.waitForLoadState;
   page.waitForLoadState = async function(/** @type {any} */ state, /** @type {any} */ options) {
     const { fileName, lineNumber } = getCallerInfo();
-    console.log(`[${fileName}:${lineNumber}] waitForLoadState('${state || 'load'}')`);
+    // Skip logging for internal fixture calls
+    if (fileName !== 'fixtures.js') {
+      console.log(`[${fileName}:${lineNumber}] waitForLoadState('${state || 'load'}')`);
+    }
     return await originalWaitForLoadState.call(this, state, options);
   };
 
@@ -89,7 +95,7 @@ function patchLocator(locator) {
       } catch (e) {
         // Ignore
       }
-      console.log(`[${fileName}:${lineNumber}] click() on ${locatorDesc}`);
+      console.log(`[${fileName}:${lineNumber}] click ${locatorDesc}`);
       return await originalClick.call(this, options);
     };
   }
