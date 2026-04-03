@@ -1,4 +1,7 @@
 class BackToThePastPage {
+  /**
+   * @param {any} page
+   */
   constructor(page) {
     this.page = page;
     this.iframe = page.locator('iframe[name="contentWindow"]');

@@ -1,7 +1,11 @@
 const { test, expect } = require('@playwright/test');
 const BackToThePastPage = require('./back-to-the-past.page');
+const { patchPageAndLocators } = require('./console-logger');
 
 test('Back To The Past', async ({ page }) => {
+  // Setup console logger with monkey patching on the page instance
+  patchPageAndLocators(page);
+  
   const backToThePastPage = new BackToThePastPage(page);
 
 // Todo: Test must close random popup by clicking "Later" button
