@@ -1,26 +1,30 @@
 const { test, expect } = require('@playwright/test');
+const BackToThePastPage = require('./back-to-the-past.page');
 
 test('Back To The Past', async ({ page }) => {
+  const backToThePastPage = new BackToThePastPage(page);
 
-// Navigate to the website
-  await page.goto('https://websim.com/@DarkArtsWizard/too-many-waits/80');
+// Todo: Test must close random popup by clicking "Later" button
 
- // Show full screen
-  await page.getByRole('button', { name: 'Toggle Sidebar' }).click();
+  // Step 1: Navigate to the website
+  await backToThePastPage.goto();
+    await page.waitForTimeout(1000);
 
- // Click "Wait For Popup and Toast Message"
-  await page.locator('iframe[name="contentWindow"]').contentFrame().getByRole('button', { name: 'WAIT WITH POPUP AND TOAST' }).click();
 
-//Validate the Syncing With Hill Valley Toast message
-  await expect(page.locator('iframe[name="contentWindow"]').contentFrame().getByText('Syncing With Hill Valley')).toBeVisible();
+  // Step 2: Show full screen
+  await backToThePastPage.toggleSidebar();
 
-// Click Back to the Past button 
-  await page.locator('iframe[name="contentWindow"]').contentFrame().getByRole('button', { name: 'BACK TO THE PAST' }).click();
-    
+  // Step 3: Click "Wait For Popup and Toast Message"
+  await backToThePastPage.clickWaitWithPopupButton();
 
-//Verify the final message is visible
-  await expect(page.locator('iframe[name="contentWindow"]').contentFrame().getByText('The construction of meaning')).toBeVisible();
+  // Validate the Syncing With Hill Valley Toast message - Fails here!!!
+  await expect(await backToThePastPage.verifySyncingMessageVisible()).toBeVisible();
 
+  // Step 4: Click 'Back to the Past' button
+  await backToThePastPage.clickBackToThePastButton();
+
+  // Verify the final message is visible
+  await expect(await backToThePastPage.verifyConstructionMessageVisible()).toBeVisible();
 });
 
 
